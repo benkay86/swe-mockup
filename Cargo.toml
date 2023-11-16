@@ -1,0 +1,56 @@
+[package]
+name = "swe-mockup"
+description = "Benchmark sandwich estimator using rust and ndarray."
+default-run = "benchmark"
+version = "0.1.0"
+authors = ["Benjamin Kay <benjamin@benkay.net>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+# The ndarray ecosystem of crates is unstable (no major version release yet).
+# We will use the latest version of ndarray-linalg, which is the "oldest" crate
+# in the ecosystem. Then we will depend on specific versions of crates that this
+# version of ndarray-linalg depends on.
+
+# High-level linear algebra library (uses LAPACK via the lax crate).
+[dependencies.ndarray-linalg]
+version = "0.16.0"
+
+# Matrix library.
+# Use BLAS for speedy operations on the backend.
+# Enable support for threading via the rayon crate.
+[dependencies.ndarray]
+version = "0.15.2"
+features = ["blas", "rayon"]
+
+# Low-level interface to LAPACK.
+# Use the system openblas backend.
+[dependencies.lax]
+version = "0.16.0-rc.0"
+features = ["openblas-system"]
+
+# Manage the source and headers for the BLAS backend. Use OpenBLAS.
+[dependencies.blas-src]
+version = "0.9"
+features = ["openblas"]
+
+# Manage the source and headers for the LAPACK backend. Use OpenBLAS.
+[dependencies.lapack-src]
+version = "0.9"
+features = ["openblas"]
+
+# Openblas backend (provides BLAS and LAPACK).
+# Link to the system blas.
+# Use the more commonly-available C ABI (cblas and lapacke).
+[dependencies.openblas-src]
+version = "0.10.4"
+features = ["cblas", "lapacke", "system"]
+
+# Other dependencies in alphabetical order.
+[dependencies]
+ndarray-rand = "0.14.0" # Generate random matrices for mockup
+num_cpus = "^1"         # Detect number of cpus at runtime
+rand = "0.8.0"          # Random number generator
+rand_distr = "0.4.0"    # Random sampling from statistical distributions
+rayon = "1.0.3"         # Threading library based on same model as OpenCilk
