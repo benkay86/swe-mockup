@@ -4,11 +4,10 @@
 extern crate blas_src;
 extern crate lapack_src;
 
-use ndarray::{s, Array, Axis};
+use ndarray::{s, Array, Axis, Dim, NewAxis};
 use ndarray_rand::{RandomExt, SamplingStrategy};
 use rand_distr::{Distribution, StandardNormal, Uniform};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-use rayon::ThreadPoolBuilder;
 use std::io::Write; // for flushing stdout
 
 #[allow(non_upper_case_globals)]
@@ -94,6 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!(" done.");
+    println!("Simulated {} blocks.", n_blocks);
 
     // Spin up a thread pool. //
 
@@ -104,10 +104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ncpus_inner = std::cmp::max(1, ncpus - ncpus_outer);
 
     // Create thread pools.
-    let pool_outer = ThreadPoolBuilder::default()
+    let pool_outer = rayon::ThreadPoolBuilder::default()
         .num_threads(ncpus_outer)
         .build()?;
-    let pool_inner = ThreadPoolBuilder::default()
+    let pool_inner = rayon::ThreadPoolBuilder::default()
         .num_threads(ncpus_inner)
         .build()?;
     println!("Outer thread pool has {} cpus.", ncpus_outer);
@@ -115,81 +115,127 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Compute the variance-covariance matrix of the regression coefficients, //
     // B, using the sandwhich estimator. //
-    print!("Computing SwE... ");
-    std::io::stdout().flush().unwrap();
 
     // Start the clock for benchmarking.
     let time = std::time::Instant::now();
 
     // Repeatedly compute cov_b n_rep times.
     let mut cov_b = Array::<f64, _>::zeros((n_pred, n_pred, n_feat));
-    for _ in 0..n_rep {
-        // Assign cov_b the result from the outer thread pool.
-        // Enter the outer thread pool.
-        cov_b = pool_outer.install(|| {
-            // Iterate over blocks.
-            std::ops::Range {
-                start: 0,
-                end: n_blocks + 1, // Rust ranges exclude the last element
-            }
-            .into_par_iter()
-            .map(|block_id| {
-                // Find indices for observations in this block.
-                // This is an opportunity for optimization, see https://github.com/rust-ndarray/ndarray/issues/466
-                // However, this would require major changes to ndarray :-(
-                let block_indices: Vec<_> = block_ids
-                    .indexed_iter()
-                    .filter_map(|(index, &item)| if item == block_id { Some(index) } else { None })
-                    .collect();
+    for rep in 0..n_rep {
+        // Progress indicator.
+        print!("Computing SwE, repetition {} of {}... ", rep + 1, n_rep);
+        std::io::stdout().flush().unwrap();
 
-                // Compute the half sandwich for all features in this block.
-                let half_sandwich = x_pinv
-                    .select(Axis(1), &block_indices)
-                    .dot(&resid.select(Axis(0), &block_indices));
+        // Create a pair of channels to synchronize access to cov_b. We will
+        // send 2-dimensional arrays of f64 over the channel along with a
+        // feature index.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Array<f64, Dim<[usize; 2]>>, usize)>(
+            ncpus_inner + ncpus_outer,
+        );
 
-                // Enter the inner thread pool.
-                pool_inner.install(|| {
-                    // Allocate memory for cov_b for this block.
-                    let mut cov_b = Array::<f64, _>::zeros((n_pred, n_pred, n_feat));
+        // Spawn a scoped thread to receive updates to cov_b.
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Initialize progress indicator.
+                let mut n = 1; // number of updates
+                let n_total = n_feat * n_blocks; // total number of updates
+                let mut pct = 0; // percentage
+                let msg = "0%"; // progress message to print
+                print!("{}", msg);
+                std::io::stdout().flush().unwrap();
+                let mut msg_count = msg.as_bytes().len(); // bytes printed
 
-                    // Iterate over the features in cov_b and half_sandwich
-                    // together. Zipping together the axis iterators proves to
-                    // the compiler that we will not go out of bounds,
-                    // eliminating the need for runtime bounds checking.
-                    cov_b
-                        // Iterate over axis 2 (3rd dimension) of cov_b...
-                        .axis_iter_mut(Axis(2))
-                        .into_par_iter()
-                        // ...together with axis 1 (columns) of half_sandwich.
-                        .zip(half_sandwich.axis_iter(Axis(1)))
-                        // Put a floor under the chunk size so that rayon does
-                        // not overflow the stack by dividing the features up
-                        // into too many teeny tiny chunks.
-                        .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner - 1))
-                        .for_each(|(mut cov_b, half_sandwich)| {
-                            // Compute the contribution to cov_b from this feature.
-                            // TODO optimize by calling dsyrk directly through lax.
-                            cov_b += half_sandwich.dot(&half_sandwich);
-                        });
+                // Iterate over all updates to cov_b.
+                let mut rx_iter = rx.into_iter();
+                while let Some((cov_b_update, feat)) = rx_iter.next() {
+                    // Update progress indicator every 1%.
+                    let pct_new = 100. * (n as f32) / (n_total as f32);
+                    if pct_new > (pct as f32) {
+                        // Round to nearest whole percent.
+                        pct = pct_new.round() as u8;
+                        // Erase previous percentage with \x08 backspaces.
+                        print!("{:\x08<1$}", "", msg_count);
+                        // Print new percentage.
+                        let msg = format!("{}%", pct);
+                        print!("{}", msg);
+                        msg_count = msg.as_bytes().len();
+                        std::io::stdout().flush().unwrap();
+                        // Don't update indicator until next whole percent.
+                        pct += 1;
+                    }
+                    // Increment number of updates.
+                    n = n + 1;
 
-                    // Return cov_b for this block.
-                    cov_b
-                })
-            })
-            // Sum cov_b over blocks.
-            .reduce(
-                // Closure to return an "identity" cov_b for parallel summing,
-                // in this case a matrix of zeros.
-                || Array::<f64, _>::zeros((n_pred, n_pred, n_feat)),
-                // Closure to perform the sum operation.
-                |a, b| a + b,
-            )
+                    // Add update to the slice in cov_b indexed by its feature.
+                    let mut slice = cov_b.slice_mut(s![.., .., feat]);
+                    slice += &ndarray::ArrayView::from(&cov_b_update);
+                }
+
+                // Clear progress indicator.
+                print!("{:\x08<1$}", "", msg_count);
+            });
+
+            // Enter the outer thread pool.
+            pool_outer.install(|| {
+                // Iterate over blocks.
+                std::ops::Range {
+                    start: 0,
+                    end: n_blocks + 1, // Rust ranges exclude the last element
+                }
+                .into_par_iter()
+                .for_each(|block_id| {
+                    // Find indices for observations in this block.
+                    // This is an opportunity for optimization, see https://github.com/rust-ndarray/ndarray/issues/466
+                    // However, this would require major changes to ndarray :-(
+                    let block_indices: Vec<_> = block_ids
+                        .indexed_iter()
+                        .filter_map(
+                            |(index, &item)| if item == block_id { Some(index) } else { None },
+                        )
+                        .collect();
+
+                    // Compute the half sandwich for all features in this block.
+                    let half_sandwich = x_pinv
+                        .select(Axis(1), &block_indices)
+                        .dot(&resid.select(Axis(0), &block_indices));
+
+                    // Enter the inner thread pool.
+                    pool_inner.install(|| {
+                        // Iterate over the features in half_sandwich.
+                        half_sandwich
+                            // Iterate over axis 2 (3rd dimension) of cov_b...
+                            .axis_iter(Axis(1))
+                            .into_par_iter()
+                            // Keep track of the feature index.
+                            .enumerate()
+                            // Put a floor under the chunk size so that rayon does
+                            // not overflow the stack by dividing the features up
+                            // into too many teeny tiny chunks.
+                            .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner - 1))
+                            .for_each(|(feat, half_sandwich)| {
+                                // Compute the contribution to cov_b from this feature.
+                                // TODO optimize by calling dsyrk directly through lax.
+                                let half_sandwich = half_sandwich.slice(s![.., NewAxis]);
+                                let tx = tx.clone();
+                                tx.send((half_sandwich.dot(&half_sandwich.t()), feat))
+                                    .unwrap(); // panic if receiver has hung up
+                            });
+                    })
+                });
+            });
+
+            // Drop the last remaining handle to the transmit channel, signaling
+            // that there are no more updates.
+            drop(tx);
         });
+
+        // Progress indicator.
+        println!("done.");
     }
 
     // Print the time elapsed.
     let time_elapsed = time.elapsed();
-    println!(" done.\nTime elapsed: {:?}", time_elapsed);
+    println!("Time elapsed: {:?}", time_elapsed);
     println!(
         "That's {:?} per repetition.",
         time_elapsed / n_rep.try_into().unwrap()
