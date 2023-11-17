@@ -94,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!(" done.");
+    println!("Simulated {} blocks.", n_blocks);
 
     // Spin up a thread pool. //
 
@@ -105,6 +106,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create thread pools.
     let pool_outer = ThreadPoolBuilder::default()
+        // Make sure outer threads have large enough stacks (in bytes) to keep
+        // track of forks/joins in the inner pool without overflowing.
+        .stack_size(1024 * 1024 * ncpus_inner)
         .num_threads(ncpus_outer)
         .build()?;
     let pool_inner = ThreadPoolBuilder::default()
@@ -165,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Put a floor under the chunk size so that rayon does
                         // not overflow the stack by dividing the features up
                         // into too many teeny tiny chunks.
-                        .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner - 1))
+                        .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner + 1))
                         .for_each(|(mut cov_b, half_sandwich)| {
                             // Compute the contribution to cov_b from this feature.
                             // TODO optimize by calling dsyrk directly through lax.
@@ -178,13 +182,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
             })
             // Sum cov_b over blocks.
-            .reduce(
-                // Closure to return an "identity" cov_b for parallel summing,
-                // in this case a matrix of zeros.
-                || Array::<f64, _>::zeros((n_pred, n_pred, n_feat)),
-                // Closure to perform the sum operation.
-                |a, b| a + b,
-            )
+            .reduce_with(|a, b| a + b)
+            // Return cov_b filled with zeros if the iterator was empty.
+            .unwrap_or_else(|| Array::<f64, _>::zeros((n_pred, n_pred, n_feat)))
         });
     }
 
