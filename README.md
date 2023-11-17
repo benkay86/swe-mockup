@@ -32,11 +32,12 @@ Minimum block size: 1
 Maximum block size: 8
 Will repeat SwE calculation 1 times.
 Generating simulated data... done.
-Outer thread pool has 1 cpus.
-Inner thread pool has 3 cpus.
+Simulated 1878 blocks.
+Outer thread pool has 2 cpus.
+Inner thread pool has 14 cpus.
 Computing SwE...  done.
-Time elapsed: 29.265938458s
-That's 29.265938458s per repetition.
+Time elapsed: 23.726886259s
+That's 23.726886259s per repetition.
 ```
 
 ## Troubleshooting
