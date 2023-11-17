@@ -7,7 +7,7 @@ extern crate lapack_src;
 use ndarray::{s, Array, Axis};
 use ndarray_rand::{RandomExt, SamplingStrategy};
 use rand_distr::{Distribution, StandardNormal, Uniform};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use std::io::Write; // for flushing stdout
 
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spin up a thread pool. //
 
-    // Decide how many cpu cores to assign to the inner and outer loops.
+    // Decide how many cpu cores to assign to the inner and outer thread pools.
     // The more cpus we use on the outer loop the more memory we will need.
     let ncpus = num_cpus::get();
     let ncpus_outer = if ncpus < 5 { 1 } else { 2 };
@@ -122,18 +122,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let time = std::time::Instant::now();
 
     // Repeatedly compute cov_b n_rep times.
+    let mut cov_b = Array::<f64, _>::zeros((n_pred, n_pred, n_feat));
     for _ in 0..n_rep {
-        // Allocate an empty variance-covariance matrix of zeros.
-        let cov_b = std::sync::Mutex::new(Array::<f64, _>::zeros((n_pred, n_pred)));
-
-        pool_outer.install(|| {
+        // Assign cov_b the result from the outer thread pool.
+        // Enter the outer thread pool.
+        cov_b = pool_outer.install(|| {
             // Iterate over blocks.
             std::ops::Range {
                 start: 0,
                 end: n_blocks + 1, // Rust ranges exclude the last element
             }
             .into_par_iter()
-            .for_each(|block_id| {
+            .map(|block_id| {
                 // Find indices for observations in this block.
                 // This is an opportunity for optimization, see https://github.com/rust-ndarray/ndarray/issues/466
                 // However, this would require major changes to ndarray :-(
@@ -142,31 +142,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter_map(|(index, &item)| if item == block_id { Some(index) } else { None })
                     .collect();
 
-                // Compute the half sandwich for this block.
+                // Compute the half sandwich for all features in this block.
                 let half_sandwich = x_pinv
                     .select(Axis(1), &block_indices)
                     .dot(&resid.select(Axis(0), &block_indices));
 
-                // Iterate over features.
+                // Enter the inner thread pool.
                 pool_inner.install(|| {
-                    std::ops::Range {
-                        start: 0,
-                        end: n_feat,
-                    }
-                    .into_par_iter()
-                    .for_each(|feat| {
-                        // Compute the contribution to cov_b from this feature.
-                        // TODO optimize by calling dsyrk directly through lax.
-                        let half_sandwich = half_sandwich.slice(s![.., feat]);
-                        let cov_b_this_block = half_sandwich.dot(&half_sandwich);
+                    // Allocate memory for cov_b for this block.
+                    let mut cov_b = Array::<f64, _>::zeros((n_pred, n_pred, n_feat));
 
-                        // Lock the mutex and add to cov_b.
-                        let mut cov_b = cov_b.lock().unwrap();
-                        *cov_b += cov_b_this_block;
-                        // MutexGuard automatically releases mutex here.
-                    });
-                });
-            });
+                    // Iterate over the features in cov_b and half_sandwich
+                    // together. Zipping together the axis iterators proves to
+                    // the compiler that we will not go out of bounds,
+                    // eliminating the need for runtime bounds checking.
+                    cov_b
+                        // Iterate over axis 2 (3rd dimension) of cov_b...
+                        .axis_iter_mut(Axis(2))
+                        .into_par_iter()
+                        // ...together with axis 1 (columns) of half_sandwich.
+                        .zip(half_sandwich.axis_iter(Axis(1)))
+                        // Put a floor under the chunk size so that rayon does
+                        // not overflow the stack by dividing the features up
+                        // into too many teeny tiny chunks.
+                        .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner - 1))
+                        .for_each(|(mut cov_b, half_sandwich)| {
+                            // Compute the contribution to cov_b from this feature.
+                            // TODO optimize by calling dsyrk directly through lax.
+                            cov_b += half_sandwich.dot(&half_sandwich);
+                        });
+
+                    // Return cov_b for this block.
+                    cov_b
+                })
+            })
+            // Sum cov_b over blocks.
+            .reduce(
+                // Closure to return an "identity" cov_b for parallel summing,
+                // in this case a matrix of zeros.
+                || Array::<f64, _>::zeros((n_pred, n_pred, n_feat)),
+                // Closure to perform the sum operation.
+                |a, b| a + b,
+            )
         });
     }
 
@@ -177,6 +194,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "That's {:?} per repetition.",
         time_elapsed / n_rep.try_into().unwrap()
     );
+
+    // Print an element of cov_b to make sure the optimizer sees we're using its
+    // value and doesn't optimize away our benchmark!
+    println!("cov_b[[0,0,0]] = {}", cov_b[[0, 0, 0]]);
 
     // All done, return success.
     Ok(())
