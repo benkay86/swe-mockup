@@ -4,7 +4,7 @@
 extern crate blas_src;
 extern crate lapack_src;
 
-use ndarray::{s, Array, Axis};
+use ndarray::{s, Array, Axis, NewAxis};
 use ndarray_rand::{RandomExt, SamplingStrategy};
 use rand_distr::{Distribution, StandardNormal, Uniform};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -169,7 +169,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .for_each(|(mut cov_b, half_sandwich)| {
                             // Compute the contribution to cov_b from this feature.
                             // TODO optimize by calling dsyrk directly through lax.
-                            cov_b += half_sandwich.dot(&half_sandwich);
+                            let half_sandwich = half_sandwich.slice(s![.., NewAxis]);
+                            cov_b += &half_sandwich.dot(&half_sandwich.t());
                         });
 
                     // Return cov_b for this block.
