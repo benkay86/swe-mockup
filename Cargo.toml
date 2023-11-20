@@ -51,6 +51,7 @@ features = ["cblas", "lapacke", "system"]
 [dependencies]
 ndarray-rand = "0.14.0" # Generate random matrices for mockup
 num_cpus = "^1"         # Detect number of cpus at runtime
+num-traits = { version = "0.2", default-features = false }
 rand = "0.8.0"          # Random number generator
 rand_distr = "0.4.0"    # Random sampling from statistical distributions
 rayon = "1.0.3"         # Threading library based on same model as OpenCilk
