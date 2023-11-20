@@ -36,8 +36,8 @@ Simulated 1878 blocks.
 Outer thread pool has 2 cpus.
 Inner thread pool has 14 cpus.
 Computing SwE...  done.
-Time elapsed: 23.726886259s
-That's 23.726886259s per repetition.
+Time elapsed: 12.608470327s
+That's 12.608470327s per repetition.
 ```
 
 ## Troubleshooting
