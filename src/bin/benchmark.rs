@@ -65,7 +65,7 @@ where
     // Condition variable for `inner_pools_running`
     condvar_running: Condvar,
 }
-impl <S, D> CovBCondvar<S, D>
+impl<S, D> CovBCondvar<S, D>
 where
     S: Clone + Zero,
     D: Dimension,
@@ -174,7 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The more cpus we use on the outer loop the more memory we will need.
     // Because each inner thread pool blocks on a mutex, there is no performance
     // improvement from using more than two threads for the outer pool.
-    let ncpus = num_cpus::get();
+    let ncpus = std::thread::available_parallelism()?.get();
     let ncpus_outer = if ncpus < 5 { 1 } else { 2 };
     let ncpus_inner = std::cmp::max(1, ncpus - ncpus_outer);
 
@@ -270,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // together. Zipping together the axis iterators proves to
                     // the compiler that we will not go out of bounds,
                     // eliminating the need for runtime bounds checking.
-                     cov_b
+                    cov_b
                         // Iterate over axis 2 (3rd dimension) of cov_b...
                         .axis_iter_mut(Axis(2))
                         .into_par_iter()
