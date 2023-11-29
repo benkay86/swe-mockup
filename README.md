@@ -4,7 +4,7 @@ Mockup of the sandwich estimator (SwE) calculation using simulated data for benc
 
 ## Quick Start
 
-[Install Rust](https://www.rust-lang.org/tools/install). On Linux this rust is a one-liner:
+[Install Rust](https://www.rust-lang.org/tools/install). On Linux this is a one-liner:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh

@@ -21,12 +21,12 @@ struct CovBMutexInner<S, D>
 where
     D: Dimension,
 {
-    // Number of inner pools about to be run. Used to ensure there are not more
+    // Number of threads running on the outer pool. Used to ensure there are not more
     // inner pools running than the number of cpus in the outer pool.
-    inner_pools_reserved: usize,
-    // Number of inner pools running (or about to start). Used to eliminate lock
-    // contention on the inner therad pool.
-    inner_pools_running: usize,
+    outer_pool_reserved: usize,
+    // Number of blocks being processed on the inner pool. Used to eliminate
+    // lock contention on the inner thread pool.
+    inner_pool_blocks: usize,
     // The variance-covariance matrix of b.
     cov_b: Array<S, D>,
 }
@@ -42,9 +42,9 @@ where
     {
         Self {
             // Initially there are no inner pools reserved.
-            inner_pools_reserved: 0,
+            outer_pool_reserved: 0,
             // Initially there are no inner pools running.
-            inner_pools_running: 0,
+            inner_pool_blocks: 0,
             // Start with a matrix of zeros and add each block of the SwE.
             cov_b: Array::<S, D>::zeros(shape),
         }
@@ -60,10 +60,10 @@ where
 {
     // Mutex
     mutex: Mutex<CovBMutexInner<S, D>>,
-    // Condition variable for `inner_pools_reserved`
-    condvar_reserved: Condvar,
-    // Condition variable for `inner_pools_running`
-    condvar_running: Condvar,
+    // Condition variable for `outer_pool_reserved`
+    condvar_outer_reserved: Condvar,
+    // Condition variable for `inner_pool_blocks`
+    condvar_inner_blocks: Condvar,
 }
 impl<S, D> CovBCondvar<S, D>
 where
@@ -77,8 +77,8 @@ where
     {
         Self {
             mutex: Mutex::new(CovBMutexInner::zeros(shape)),
-            condvar_reserved: Condvar::new(),
-            condvar_running: Condvar::new(),
+            condvar_outer_reserved: Condvar::new(),
+            condvar_inner_blocks: Condvar::new(),
         }
     }
 }
@@ -220,16 +220,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             .into_par_iter()
             .for_each(|block_id| {
-                // Workaround for https://github.com/rayon-rs/rayon/issues/1105
-                // Only panics if mutex is poisoned.
+                // Reserve a thread on the outer pool to limit the number of
+                // `half_sandwich` matrices computed in parallel to be not more
+                // then the number of cpu resources on the outer pool. This is a
+                // workaround for: https://github.com/rayon-rs/rayon/issues/1105
+                // needed to prevent unbounded memory growth.
+                // Note: unwrap() only panics if mutex is poisoned.
                 {
                     // Wait until cpu resources are available.
                     let mut lock = cov_b_condvar.mutex.lock().unwrap();
-                    while lock.inner_pools_running >= ncpus_outer {
-                        lock = cov_b_condvar.condvar_reserved.wait(lock).unwrap();
+                    while lock.outer_pool_reserved >= ncpus_outer {
+                        lock = cov_b_condvar.condvar_outer_reserved.wait(lock).unwrap();
                     }
                     // Increment the number of inner pools reserved.
-                    lock.inner_pools_reserved += 1;
+                    lock.outer_pool_reserved += 1;
                     // Lock is dropped and released here at end of scope.
                 }
 
@@ -246,20 +250,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .select(Axis(1), &block_indices)
                     .dot(&resid.select(Axis(0), &block_indices));
 
-                // Don't enter the inner thread pool until the mutex is
-                // available.
+                // Don't send the block to the inner thread pool until the mutex
+                // is available. Note: this will under-utilize the outer pool
+                // if `ncpus_outer` is greater than 2.
                 {
-                    // Wait until no other inner pools are running.
+                    // Wait until no other blocks are running on the inner pool.
                     let mut lock = cov_b_condvar.mutex.lock().unwrap();
-                    while lock.inner_pools_running > 0 {
-                        lock = cov_b_condvar.condvar_running.wait(lock).unwrap();
+                    while lock.inner_pool_blocks > 0 {
+                        lock = cov_b_condvar.condvar_inner_blocks.wait(lock).unwrap();
                     }
-                    // Increment the number of inner pools running.
-                    lock.inner_pools_running += 1;
+                    // Increment the number of blocks being processed on the
+                    // inner pool.
+                    lock.inner_pool_blocks += 1;
                     // Lock is dropped and released here at end of scope.
                 }
 
                 // Enter the inner thread pool.
+                // Note: Per https://github.com/rust-ndarray/ndarray/issues/466
+                // the call to `install()` may yield execution on _this_ thread
+                // to another task.
                 pool_inner.install(|| {
                     // Lock the mutex to get exclusive access to cov_b.
                     // Only panics if the mutex is poisoned.
@@ -288,16 +297,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
 
                     // Workaround for https://github.com/rayon-rs/rayon/issues/1105
-                    // Decrement the number of inner pools running.
-                    cov_b_mutex_inner.inner_pools_running -= 1;
+                    // Decrement the number of blocks running on the inner pool.
+                    cov_b_mutex_inner.inner_pool_blocks -= 1;
                     // Signal to a blocking thread that this inner pool is done.
-                    cov_b_condvar.condvar_running.notify_one();
-                    // Decrement the number of inner pools reserved.
-                    cov_b_mutex_inner.inner_pools_reserved -= 1;
+                    cov_b_condvar.condvar_inner_blocks.notify_one();
+                    // Decrement number of threads reserved on the outer pool.
+                    cov_b_mutex_inner.outer_pool_reserved -= 1;
                     // Signal to a blocking thread that this inner pool is done.
-                    cov_b_condvar.condvar_reserved.notify_one();
+                    cov_b_condvar.condvar_outer_reserved.notify_one();
                     // Lock is dropped and released here at end of scope.
                 });
+                // Note: Per https://github.com/rust-ndarray/ndarray/issues/466
+                // don't block on a mutex here because `install()` may yield,
+                // therefore we cannot guarantee when statements after
+                // `install()` will execute or if they will deadlock.
             })
         })
     }
