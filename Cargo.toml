@@ -49,6 +49,8 @@ features = ["cblas", "lapacke", "system"]
 
 # Other dependencies in alphabetical order.
 [dependencies]
+# Read and write npy files.
+ndarray-npy = { version = "0.8.1", default-features = false, features = ["npz"] }
 # Generate random matrices for mockup
 ndarray-rand = "0.14.0"
 # Traits for generic numeric traits, needed by ndarray.

@@ -14,6 +14,7 @@ use ndarray::{s, Array, Axis, Dimension, NewAxis, ShapeBuilder};
 use num_traits::Zero;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
+use std::fs::File;
 use std::io::Write; // for flushing stdout
 use std::sync::{Condvar, Mutex};
 
@@ -89,28 +90,33 @@ where
 
 #[allow(non_upper_case_globals)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Mock data parmeters.
-    let mock_params = MockParams::default();
-    print!("{}", mock_params);
-    let n_feat = mock_params.n_feat.get(); // convert from NonZeroUsize to usize
-    let n_pred = mock_params.n_pred.get();
+    // Try to load mock data from file, otherwise generate it on the fly.
+    let mock_data = if let Ok(file) = File::open("mock-data.npz") {
+        print!("Reading mock data from mock-data.npz...");
+        std::io::stdout().flush().unwrap();
+        MockData::<f64>::from_npz_file(file)?
+    } else {
+        print!("Generating mock data...");
+        std::io::stdout().flush().unwrap();
+        MockData::from_params(MockParams::default())
+    };
+    println!(" done.");
+    print!("{}", mock_data);
 
     // Number of (non-parallel) repetitions of SwE comutation.
     let n_rep = 1;
     println!("Number of repetitions: {}", n_rep);
 
-    // Generate mock data and destructure.
-    print!("Generating mock data...");
-    std::io::stdout().flush().unwrap();
+    // Destructure mock data.
+    let n_feat = mock_data.n_feat().get();
+    let n_pred = mock_data.n_pred().get();
     let MockData {
         n_blocks,
         block_ids,
         resid,
         x_pinv
-    } = MockData::from_params(mock_params);
-    println!(" done.");
+    } = mock_data;
     let n_blocks = n_blocks.get();
-    println!("Generated {} blocks.", n_blocks);
 
     // Spin up a thread pool. //
 

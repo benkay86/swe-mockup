@@ -40,6 +40,23 @@ Time elapsed: 12.608470327s
 That's 12.608470327s per repetition.
 ```
 
+## Generating Mock Data
+
+By default, the benchmarks will randomly generate a new set of mock data on each run. If you want the most consistent comparisons possible between benchmarks and runs, generate a single mock data set in advance and save it to disk. The data will be saved in the [NumPy format](https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html#module-numpy.lib.format) to `mock-data.npz` by default. The benchmarks will automatically use data from the `mock-data.npz` file if it is present (instead of generating new data).
+
+```bash
+cargo run --release --bin mock-npz # generate data
+cargo run --release                # benchmark using generated data
+```
+
+To use the mock data in Matlab, use the [npy-matlab package](https://github.com/kwikteam/npy-matlab). This package does not support `*.npz` files, so first you will have to unzip the data and rename the data structures. Then you can call `readNPY()` in Matlab to load the files.
+
+```bash
+mkdir mock-data
+unzip mock-data.npz -d mock-data
+for FILE in mock-data/*; do mv ${FILE} ${FILE}.npy; done
+```
+
 ## Troubleshooting
 
 If you get a compilation error to the effect of `cannot find -lopenblas` then you either do not have openblas installed on your system, or else it is not installed in a place where `openblas-src` and `blas-src` can find it. Either check to make sure openblas is installed correctly, or else edit [`Cargo.toml`](./Cargo.toml), replacing `"openblas-system"` and `"system"` with `"openblas-static"` and `"static"`. This will compile a bundled version of the openblas and lapack source and statically link to it. Note that this workaround will dramatically increase compilation size, increase the size of the binary, and potentialy build a less-highly-optimized version of openblas than the one bundled with your system.
