@@ -1,8 +1,10 @@
 //! Benchmark parallel implementation of SwE using ndarray and rayon threadpool.
 //! 
-//! This file benchmarks a single SwE computation. See [benchmark-perm.rs] for
-//! benchmarking multiple SwE computations in parallel, as might occur in a wild
-//! bootstrap.
+//! This algorithm is tailored for a single SwE computation. This computation
+//! can, optionally, be repeated _serially_ to get an average benchmark time by
+//! editing the value of `n_rep`. For an algorithm tailored for _parallel_
+//! computation of multiple SwE, such as might be used in a wild bootstrap, see
+//! (./benchmark-multi.rs).
 
 // Force linking against blas and lapack backends.
 extern crate blas_src;
