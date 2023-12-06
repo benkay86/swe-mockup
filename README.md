@@ -26,20 +26,20 @@ cargo run --release
 
 Sample benchmark output:
 ```
-Simulation parameters:
+Benchmark of multiple, parallel SwE computations.
+File mock-data.npz not found.
+Consider running mock-npz to generate data.
+Generating mock data on the fly... done.
+Mock data parameters:
 Number of observations: 8192
 Number of features: 55278
 Number of predictors: 8
-Minimum block size: 1
-Maximum block size: 8
-Will repeat SwE calculation 1 times.
-Generating simulated data... done.
-Simulated 1878 blocks.
-Outer thread pool has 2 cpus.
-Inner thread pool has 14 cpus.
+Number of blocks: 1800
+Number of parallel repetitions: 20
+Thread pool has 30 cpus.
 Computing SwE...  done.
-Time elapsed: 12.608470327s
-That's 12.608470327s per repetition.
+Time elapsed: 48.608350496s
+That's 2.430417524s per repetition.
 ```
 
 ## Generating Mock Data
@@ -57,6 +57,14 @@ To use the mock data in Matlab, use the [npy-matlab package](https://github.com/
 mkdir -p mock-data
 unzip mock-data.npz -d mock-data
 for FILE in mock-data/*; do mv ${FILE} ${FILE}.npy; done
+```
+
+## Selecting a Benchmark
+
+The available benchmarks are listed under [src/bin](./src/bin). The default benchmark is a parallel computation of multiple sandwich estimator covariance matrices. To select a different benchmark, sich as a single computation of the SwE, specify the desired benchmark with `--bin`. For example:
+
+```bash
+cargo run --release --bin benchmark-single
 ```
 
 ## Matlab Benchmarks
