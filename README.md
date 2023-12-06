@@ -15,10 +15,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Clone this repository and invoke [cargo](https://doc.rust-lang.org/cargo/), Rust's build tool.
 
 ```bash
-git clone https://github.com/benkay86/swe-mockup.git
+git clone --recurse-submodules https://github.com/benkay86/swe-mockup.git
 cd swe-mockup
 cargo run --release
 ```
+
+> Hint: Pull the latest changes to your local git repository with `git pull --recurse-submodules`.
 
 > Hint: Use the `--release` profile to enable compiler performance enhancements.
 
@@ -52,9 +54,29 @@ cargo run --release                # benchmark using generated data
 To use the mock data in Matlab, use the [npy-matlab package](https://github.com/kwikteam/npy-matlab). This package does not support `*.npz` files, so first you will have to unzip the data and rename the data structures. Then you can call `readNPY()` in Matlab to load the files.
 
 ```bash
-mkdir mock-data
+mkdir -p mock-data
 unzip mock-data.npz -d mock-data
 for FILE in mock-data/*; do mv ${FILE} ${FILE}.npy; done
+```
+
+## Matlab Benchmarks
+
+To run the Matlab benchmarks, first generate some mock data and prepare it as above:
+
+```bash
+# Generate mock data
+cargo run --release --bin mock-npz
+# Prepare the data for Matlab
+mkdir -p mock-data
+unzip mock-data.npz -d mock-data
+for FILE in mock-data/*; do mv ${FILE} ${FILE}.npy; done
+```
+
+Then enter the [`matlab`](./matlab) directory and run the desired benchmark.
+
+```bash
+cd matlab
+matlab -nodesktop -r benchmark_multi
 ```
 
 ## Troubleshooting
