@@ -42,7 +42,7 @@ That's 12.608470327s per repetition.
 
 ## Troubleshooting
 
-If you get a compilation error to the effect of `cannot find -lopenblas` then you either do not have openblas installed on your system, or else it is not installed in a place where `openblas-src` and `blas-src` can find it. Either check to make sure openblas is installed correctly, or else edit [`Cargo.toml`](./Cargo.toml), replacing `"openblas-system"` and `"system"` with `"openblas-static"` and `"static"`. This will compile a bundled version of the openblas and lapack source and statically link to it. Note that this workaround will dramatically increase compilation size, increase the size of the `benchmark` binary, and potentialy build a less-highly-optimized version of openblas than the one bundled with your system.
+If you get a compilation error to the effect of `cannot find -lopenblas` then you either do not have openblas installed on your system, or else it is not installed in a place where `openblas-src` and `blas-src` can find it. Either check to make sure openblas is installed correctly, or else edit [`Cargo.toml`](./Cargo.toml), replacing `"openblas-system"` and `"system"` with `"openblas-static"` and `"static"`. This will compile a bundled version of the openblas and lapack source and statically link to it. Note that this workaround will dramatically increase compilation size, increase the size of the binary, and potentialy build a less-highly-optimized version of openblas than the one bundled with your system.
 
 ## See Also
 
