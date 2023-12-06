@@ -285,10 +285,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .into_par_iter()
                         // ...together with axis 1 (columns) of half_sandwich.
                         .zip(half_sandwich.axis_iter(Axis(1)))
-                        // Put a floor under the chunk size so that rayon does
-                        // not overflow the stack by dividing the features up
-                        // into too many teeny tiny chunks.
-                        .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner + 1))
+                        // Optionally put a floor under the chunk size so that
+                        // rayon does not overflow the stack by dividing the
+                        // features up into too many teeny tiny chunks.
+                        // .with_min_len(half_sandwich.len_of(Axis(1)) / (ncpus_inner + 1))
                         .for_each(|(mut cov_b, half_sandwich)| {
                             // Compute the contribution to cov_b from this feature.
                             // TODO optimize by calling dsyrk directly through lax.
