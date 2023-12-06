@@ -90,13 +90,17 @@ where
 
 #[allow(non_upper_case_globals)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Benchmark of single SwE computation.");
+
     // Try to load mock data from file, otherwise generate it on the fly.
     let mock_data = if let Ok(file) = File::open("mock-data.npz") {
         print!("Reading mock data from mock-data.npz...");
         std::io::stdout().flush().unwrap();
         MockData::<f64>::from_npz_file(file)?
     } else {
-        print!("Generating mock data...");
+        println!("File mock-data.npz not found.");
+        println!("Consider running mock-npz to generate data.");
+        print!("Generating mock data on the fly...");
         std::io::stdout().flush().unwrap();
         MockData::from_params(MockParams::default())
     };
