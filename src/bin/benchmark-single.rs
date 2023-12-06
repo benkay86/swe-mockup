@@ -8,10 +8,10 @@
 extern crate blas_src;
 extern crate lapack_src;
 
+use swe_mockup::{MockData, MockParams};
+
 use ndarray::{s, Array, Axis, Dimension, NewAxis, ShapeBuilder};
-use ndarray_rand::{RandomExt, SamplingStrategy};
 use num_traits::Zero;
-use rand_distr::{Distribution, StandardNormal, Uniform};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use std::io::Write; // for flushing stdout
@@ -89,88 +89,28 @@ where
 
 #[allow(non_upper_case_globals)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Simulation parameters. //
-    println!("Simulation parameters:");
+    // Mock data parmeters.
+    let mock_params = MockParams::default();
+    print!("{}", mock_params);
+    let n_feat = mock_params.n_feat.get(); // convert from NonZeroUsize to usize
+    let n_pred = mock_params.n_pred.get();
 
-    // Number of observations.
-    const n_obs: usize = 8192;
-    println!("Number of observations: {}", n_obs);
+    // Number of (non-parallel) repetitions of SwE comutation.
+    let n_rep = 1;
+    println!("Number of repetitions: {}", n_rep);
 
-    // Number of features/edges.
-    const n_feat: usize = ((333 * 333) - 333) / 2;
-    println!("Number of features: {}", n_feat);
-
-    // Number of predictors/covariates.
-    const n_pred: usize = 8;
-    println!("Number of predictors: {}", n_pred);
-
-    // Range of possible block/group sizes from 1 to 8, inclusive.
-    const min_block_size: usize = 1;
-    const max_block_size: usize = 8;
-    let block_size = Uniform::new_inclusive(min_block_size, max_block_size);
-    println!("Minimum block size: {}", min_block_size);
-    println!("Maximum block size: {}", max_block_size);
-
-    // Number of repetitions/permutations.
-    const n_rep: usize = 1;
-    println!("Will repeat SwE calculation {} times.", n_rep);
-
-    // Simulate mock-up data. //
-    print!("Generating simulated data...");
+    // Generate mock data and destructure.
+    print!("Generating mock data...");
     std::io::stdout().flush().unwrap();
-
-    // Initialize a random number generator.
-    let mut rng = rand::thread_rng();
-
-    // Simulate an observations x features matrix of residuals from the standard
-    // normal distribution.
-    let resid = Array::<f64, _>::random_using((n_obs, n_feat), StandardNormal, &mut rng);
-
-    // Simulate a predictors x observations matrix to stand in for the
-    // pseudoinverse of the design matrix, X.
-    let x_pinv = Array::<f64, _>::random_using((n_pred, n_obs), StandardNormal, &mut rng);
-
-    // Simulate a vector of block ids. Each observation is assigned an integer
-    // id from zero to n_blocks. We deliberately simulate non-continuous blocks
-    // to benchmark the effect of cache misses in real data.
-    let (block_ids, n_blocks) = {
-        // Initialize a zero vector of block ids.
-        let mut block_ids = Array::zeros(n_obs);
-        // Initial conditions for loop.
-        let mut block_id = 0;
-        let mut block_start = 0;
-        let mut block_end;
-        // Loop, assigning ids block by block.
-        while {
-            // Random size for this block.
-            block_end = block_start + block_size.sample(&mut rng);
-            // When we reach the end of block_ids, let the last block default to
-            // an id of zero.
-            block_end <= block_ids.len_of(Axis(0))
-        } {
-            // Pre-increment block id.  The first id to be assigned will
-            // therefore be one.
-            block_id += 1;
-            // Assign ids for this block.
-            block_ids
-                .slice_mut(s![block_start..block_end])
-                .fill(block_id);
-            // Next block starts where this block ends.
-            block_start = block_end;
-        }
-        // Shuffle the order of the block ids.
-        block_ids = block_ids.sample_axis_using(
-            Axis(0),
-            block_ids.len_of(Axis(0)),
-            SamplingStrategy::WithoutReplacement,
-            &mut rng,
-        );
-        // Return the vector of block ids and the last block id.
-        (block_ids, block_id)
-    };
-
+    let MockData {
+        n_blocks,
+        block_ids,
+        resid,
+        x_pinv
+    } = MockData::from_params(mock_params);
     println!(" done.");
-    println!("Simulated {} blocks.", n_blocks);
+    let n_blocks = n_blocks.get();
+    println!("Generated {} blocks.", n_blocks);
 
     // Spin up a thread pool. //
 
