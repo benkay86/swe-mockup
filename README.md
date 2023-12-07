@@ -87,6 +87,23 @@ cd matlab
 matlab -nodesktop -r benchmark_multi
 ```
 
+```
+Benchmark of multiple, parallel SwE computations.
+Loading mock data from mock-data/*.npy... done.
+Mock data parameters:
+Number of observations: 8192
+Number of features: 55278
+Number of predictors: 8
+Number of blocks: 1800
+Number of parallel repetitions: 20
+Starting parallel pool (parpool) using the 'local' profile ...
+Connected to the parallel pool (number of workers: 16).
+Parallel pool has 16 workers.
+Computing SwE... done.
+Time elapsed: 335.759195 seconds.
+That's 16.787960 seconds per repetition.
+```
+
 ## Troubleshooting
 
 If you get a compilation error to the effect of `cannot find -lopenblas` then you either do not have openblas installed on your system, or else it is not installed in a place where `openblas-src` and `blas-src` can find it. Either check to make sure openblas is installed correctly, or else edit [`Cargo.toml`](./Cargo.toml), replacing `"openblas-system"` and `"system"` with `"openblas-static"` and `"static"`. This will compile a bundled version of the openblas and lapack source and statically link to it. Note that this workaround will dramatically increase compilation size, increase the size of the binary, and potentialy build a less-highly-optimized version of openblas than the one bundled with your system.
