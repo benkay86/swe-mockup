@@ -188,6 +188,8 @@ $$
 \hat{\Sigma} = \sum_{i=1}^b \mathcal{H}_i \mathcal{H}_i^\intercal
 $$
 
+> Note: Although the number of observations, and thus columns in $\mathcal{H}_b$, may be different for each block, the dimensions of $\hat{\Sigma}_b=\mathcal{H}_i\mathcal{H}_i^\intercal$ are always $pred\times pred$. This helps us intuit how we are able to sum the $\hat{\Sigma}_b$ together to get $\hat{\Sigma}$.
+
 The algorithm for obtaining $\hat{\Sigma}$ is therefore a loop iterating over the diagonal blocks in $V$. For each block (cluster of observations), we compute the half sandwich $\mathcal{H}_b$, obtain $\hat{\Sigma}_b$ for that block, and add it to the grand total for $\hat{\Sigma}$.
 
 ### Multiple Features
