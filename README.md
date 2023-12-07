@@ -253,6 +253,7 @@ H_0:\ \underset{q\times pred}{R}\ \underset{pred\times 1}{\beta} = \underset{q\t
 $$
 
 For intuition, we can imagine:
+
 $$
 R = \left[\begin{matrix}1 & 0 & \cdots & 0\end{matrix}\right]
 $$
@@ -269,12 +270,19 @@ $$
 H_0:\ \underset{q\times pred}{R}\ \underset{pred\times feat}{\beta} = \underset{q\times feat}{r}
 $$
 
-The Wald statistic $W$ can be computed as follows (note the more numerically stable version using the pseudoinverse). When $\beta$ has $feat >1$ columns then only the diagonal of $W$, a vector of length $feat$, need be computed.
+The Wald statistic $W$ can be computed using the sandwich estimator as follows.
 
 $$
-W = \left(R\beta-r\right)^\intercal\left(R\Sigma_\hat{\beta}R^\intercal\right)^{-1}\left(R\beta-r\right)\\
+W = \left(R\beta-r\right)^\intercal\left(R\Sigma R^\intercal\right)^{-1}\left(R\beta-r\right)
+$$
+
+Equivalently, we can get a more numerically-stable Wald statistic using the pseudoinverse.
+
+$$
 W = \left[\left(RX^+\right)^+\left(R\beta-r\right)\right]^\intercal\left[\left(RX^+\right)^+\left(R\beta-r\right)\right]\\
 $$
+
+> Note: When $\beta$ has $feat >1$ columns then only the diagonal of $W$, a vector of length $feat$, need be computed.
 
 In the homoskedastic case, if the population variance is known (rarely the case) or $obs\rightarrow\infty$ then, asymptotically, $W$ has a $\chi^2$ distribution with $q$ degrees of freedom.  Otherwise $W$ has an $F$ distribution with degrees of freedom $d1=q,\ d2=obs-feat$.
 
