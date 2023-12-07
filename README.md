@@ -295,10 +295,14 @@ $$
 W = \left(R\beta-r\right)^\intercal\left(R\Sigma R^\intercal\right)^{-1}\left(R\beta-r\right)
 $$
 
-Equivalently, we can get a more numerically-stable Wald statistic using the pseudoinverse.
+Equivalently, we can get a more numerically-stable Wald statistic using the pseudoinverse or half sandwich.
 
 $$
-W = \left[\left(RX^+\right)^+\left(R\beta-r\right)\right]^\intercal\left[\left(RX^+\right)^+\left(R\beta-r\right)\right]\\
+W = \left[\left(RX^+\epsilon\right)^+\left(R\beta-r\right)\right]^\intercal\left[\left(RX^+\epsilon\right)^+\left(R\beta-r\right)\right] 
+$$
+
+$$
+W = \left[\left(R\mathcal{H}\right)^+\left(R\beta-r\right)\right]^\intercal\left[\left(R\mathcal{H}\right)^+\left(R\beta-r\right)\right] 
 $$
 
 > Note: When $\beta$ has $feat >1$ columns then only the diagonal of $W$, a vector of length $feat$, need be computed.
